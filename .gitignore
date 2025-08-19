@@ -1,0 +1,57 @@
+# Python-specific
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+dist/
+build/
+*.egg
+*.whl
+
+# Virtual environment
+venv/
+env/
+.venv/
+ENV/
+mcp-env/
+
+# Environment variables
+.env
+
+# Logs
+logs
+logs/*
+
+# Qodo-specific (if applicable)
+.qodo
+.qodo/*
+
+# IDE and editor files
+.idea/
+.vscode/
+*.sublime-workspace
+*.swp
+
+# Testing and coverage
+*.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Docker-specific
+*.dockerignore
+Dockerfile.*
+docker-compose.*.yml
+
+# macOS-specific
+.DS_Store
+
+# qdrant-db
+qdrant-db/
+qdrant_storage/
+
+# Miscellaneous
+*.bak
+*.tmp
+*.log

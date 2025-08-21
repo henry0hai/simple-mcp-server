@@ -12,7 +12,18 @@ from src.tools.system_info_tool import get_system_info_tool
 # Import the weather tool
 from src.tools.weather_tool import get_weather_tool
 
-from src.utils.logging_utils import get_logger  
+# Import the budget management tools
+from src.tools.budget_management_tool import (
+    add_expense_tool,
+    add_income_tool,
+    get_budget_summary_tool,
+    get_expense_report_tool,
+    get_available_categories_tool,
+    predict_category_tool,
+)
+
+from src.utils.logging_utils import get_logger
+
 logger = get_logger(__name__)
 
 
@@ -54,10 +65,50 @@ def system_info() -> dict:
     """Retrieves server system information."""
     return get_system_info_tool()
 
+
 @mcp.tool()
 def get_weather(city: str) -> str:
     """Get current weather information for a given city."""
     return get_weather_tool(city)
+
+
+@mcp.tool()
+def add_expense(description: str, amount: float, category: str = None) -> dict:
+    """Add a new expense transaction to the budget system. Category will be auto-detected if not provided."""
+    return add_expense_tool(description, amount, category)
+
+
+@mcp.tool()
+def add_income(source: str, amount: float) -> dict:
+    """Add a new income entry to the budget system."""
+    return add_income_tool(source, amount)
+
+
+@mcp.tool()
+def get_budget_summary(month: str = None) -> dict:
+    """Get comprehensive budget summary including transactions, incomes, and savings. If no month specified, defaults to current month (YYYY-MM format)."""
+    return get_budget_summary_tool(month)
+
+
+@mcp.tool()
+def get_expense_report(
+    month: int = None, year: int = None, all_data: bool = False
+) -> str:
+    """Generate and export expense report in CSV format. Defaults to current month/year if no parameters specified and all_data is False."""
+    return get_expense_report_tool(month, year, all_data)
+
+
+@mcp.tool()
+def get_available_categories() -> dict:
+    """Get list of all available expense categories."""
+    return get_available_categories_tool()
+
+
+@mcp.tool()
+def predict_category(description: str) -> dict:
+    """Predict the most appropriate category for an expense description without adding it."""
+    return predict_category_tool(description)
+
 
 @mcp.resource("resource://config")
 def get_config() -> dict:

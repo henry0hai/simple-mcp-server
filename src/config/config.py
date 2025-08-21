@@ -1,4 +1,4 @@
-# src/config.py
+# src/config/config.py
 import os
 from asyncio import Lock
 from dotenv import load_dotenv
@@ -16,6 +16,10 @@ WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 WEATHER_BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
 CITIES = os.getenv("CITIES", "").split(",")
 HF_API_KEY = os.getenv("HF_API_KEY")
+GRAPHQL_SERVER_URL = os.getenv(
+    "GRAPHQL_SERVER_URL", "http://192.168.1.199:3000/graphql"
+)
+GRAPHQL_API_TOKEN = os.getenv("GRAPHQL_API_TOKEN")
 
 # Validate environment variables
 if not all([TELEGRAM_BOT_TOKEN, ADMIN_ID, WEATHER_API_KEY, CITIES]):
@@ -42,6 +46,7 @@ START_TIME = None
 DEBUG_TIME_LOOP = 1800  # 30 minutes
 SCHEDULED_WEATHER_LOOP = 7200  # 2 hours
 
+
 class BotConfig:
     def __init__(self):
         self.is_bot_running = False
@@ -56,7 +61,10 @@ class BotConfig:
         self.hf_key_api = HF_API_KEY
         self.debug_time_loop = DEBUG_TIME_LOOP
         self.scheduled_weather_loop = SCHEDULED_WEATHER_LOOP
+        self.graphql_server_url = GRAPHQL_SERVER_URL
+        self.graphql_api_token = GRAPHQL_API_TOKEN
         self.app_version = VERSION
+
 
 config = BotConfig()
 

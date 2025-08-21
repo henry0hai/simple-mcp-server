@@ -55,3 +55,8 @@ qdrant_storage/
 *.bak
 *.tmp
 *.log
+
+# Local Server
+mcp_stack.sh
+.mcp_stack
+.mcp_stack/*

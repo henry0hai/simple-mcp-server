@@ -150,7 +150,11 @@ async def generic_tool_creation(
         output = result["stdout"].strip()
 
         # Create a clean, AI-friendly response
-        response = f"Script executed successfully. "
+        if result.get("is_reused", False):
+            response = f"Script reused successfully. "
+        else:
+            response = f"Script executed successfully. "
+
         response += f"Generated {result['language']} script: {result['filename']}. "
         response += f"Result: {output}"
 

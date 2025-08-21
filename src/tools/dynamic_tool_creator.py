@@ -1,7 +1,9 @@
 import os
 import subprocess
+import hashlib
+import json
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
 import requests
 from src.config.config import config
@@ -64,6 +66,223 @@ Generated at: """
                     + "\n"
                 )
 
+        # Create script registry file for reuse tracking
+        self.registry_file = self.commands_dir / "script_registry.json"
+        if not self.registry_file.exists():
+            with open(self.registry_file, "w") as f:
+                json.dump({}, f, indent=2)
+
+    def _normalize_request(self, request: str) -> str:
+        """Normalize user request for comparison purposes"""
+        # Convert to lowercase and remove extra spaces
+        normalized = " ".join(request.lower().strip().split())
+
+        # Define common variations that should be treated as the same
+        variations = {
+            "computer name": [
+                "computer name",
+                "hostname",
+                "server name",
+                "machine name",
+                "host name",
+            ],
+            "current time": [
+                "current time",
+                "server time",
+                "current date time",
+                "date time",
+                "time",
+            ],
+            "ip address": [
+                "ip address",
+                "current ip",
+                "server ip",
+                "network ip",
+                "my ip",
+            ],
+            "disk space": [
+                "disk space",
+                "available space",
+                "disk usage",
+                "storage space",
+            ],
+            "memory usage": ["memory usage", "ram usage", "memory", "ram"],
+            "system info": ["system info", "system information", "server info"],
+            "uptime": ["uptime", "system uptime", "server uptime"],
+        }
+
+        # Replace variations with canonical form
+        for canonical, variants in variations.items():
+            for variant in variants:
+                if variant in normalized:
+                    normalized = normalized.replace(variant, canonical)
+
+        return normalized
+
+    def _get_request_hash(self, request: str, language: str) -> str:
+        """Generate a hash for the normalized request and language"""
+        normalized_request = self._normalize_request(request)
+        combined = f"{normalized_request}:{language}"
+        return hashlib.md5(combined.encode()).hexdigest()
+
+    def _load_script_registry(self) -> Dict:
+        """Load the script registry from file"""
+        try:
+            with open(self.registry_file, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _save_script_registry(self, registry: Dict):
+        """Save the script registry to file"""
+        try:
+            with open(self.registry_file, "w") as f:
+                json.dump(registry, f, indent=2)
+        except Exception as e:
+            logger.error(f"Failed to save script registry: {str(e)}")
+
+    def _find_existing_script(
+        self, request: str, language: str
+    ) -> Optional[Tuple[str, str]]:
+        """Find an existing script that matches the request"""
+        registry = self._load_script_registry()
+        request_hash = self._get_request_hash(request, language)
+
+        # Direct hash match
+        if request_hash in registry:
+            script_info = registry[request_hash]
+            script_path = self.commands_dir / script_info["filename"]
+            if script_path.exists():
+                logger.info(f"Found exact match for request: {script_info['filename']}")
+                return script_info["filename"], script_info["original_request"]
+
+        # Fuzzy matching for similar requests
+        normalized_request = self._normalize_request(request)
+        for stored_hash, script_info in registry.items():
+            stored_normalized = self._normalize_request(script_info["original_request"])
+
+            # Check for high similarity (simple word matching for now)
+            if (
+                language == script_info["language"]
+                and self._calculate_similarity(normalized_request, stored_normalized)
+                > 0.8
+            ):
+                script_path = self.commands_dir / script_info["filename"]
+                if script_path.exists():
+                    logger.info(
+                        f"Found similar script for request: {script_info['filename']}"
+                    )
+                    return script_info["filename"], script_info["original_request"]
+
+        return None
+
+    def _calculate_similarity(self, str1: str, str2: str) -> float:
+        """Calculate similarity between two strings (simple implementation)"""
+        words1 = set(str1.split())
+        words2 = set(str2.split())
+
+        if not words1 and not words2:
+            return 1.0
+        if not words1 or not words2:
+            return 0.0
+
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+
+        return len(intersection) / len(union)
+
+    def _register_script(self, request: str, language: str, filename: str):
+        """Register a new script in the registry"""
+        registry = self._load_script_registry()
+        request_hash = self._get_request_hash(request, language)
+
+        registry[request_hash] = {
+            "filename": filename,
+            "original_request": request,
+            "language": language,
+            "created_at": datetime.now().isoformat(),
+            "usage_count": 1,
+        }
+
+        self._save_script_registry(registry)
+
+    def _update_script_usage(self, filename: str):
+        """Update usage count for an existing script"""
+        registry = self._load_script_registry()
+
+        for script_info in registry.values():
+            if script_info["filename"] == filename:
+                script_info["usage_count"] = script_info.get("usage_count", 0) + 1
+                script_info["last_used"] = datetime.now().isoformat()
+                break
+
+        self._save_script_registry(registry)
+
+    def cleanup_old_scripts(self, max_unused_days: int = 30):
+        """Clean up old unused scripts to keep directory manageable"""
+        registry = self._load_script_registry()
+        current_time = datetime.now()
+        scripts_to_remove = []
+
+        for script_hash, script_info in registry.items():
+            # Check if script file still exists
+            script_path = self.commands_dir / script_info["filename"]
+            if not script_path.exists():
+                scripts_to_remove.append(script_hash)
+                continue
+
+            # Check if script hasn't been used recently
+            last_used = script_info.get("last_used", script_info.get("created_at"))
+            if last_used:
+                last_used_date = datetime.fromisoformat(
+                    last_used.replace("Z", "+00:00").replace("+00:00", "")
+                )
+                days_unused = (current_time - last_used_date).days
+
+                # Remove scripts that haven't been used in a while and have low usage count
+                usage_count = script_info.get("usage_count", 1)
+                if days_unused > max_unused_days and usage_count <= 2:
+                    try:
+                        script_path.unlink()  # Delete the file
+                        scripts_to_remove.append(script_hash)
+                        logger.info(f"Removed unused script: {script_info['filename']}")
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to remove script {script_info['filename']}: {str(e)}"
+                        )
+
+        # Update registry
+        for script_hash in scripts_to_remove:
+            registry.pop(script_hash, None)
+
+        if scripts_to_remove:
+            self._save_script_registry(registry)
+            logger.info(f"Cleaned up {len(scripts_to_remove)} old scripts")
+
+    def get_script_stats(self) -> Dict:
+        """Get statistics about script usage and reuse"""
+        registry = self._load_script_registry()
+
+        total_scripts = len(registry)
+        total_usage = sum(
+            script_info.get("usage_count", 1) for script_info in registry.values()
+        )
+        reused_scripts = sum(
+            1
+            for script_info in registry.values()
+            if script_info.get("usage_count", 1) > 1
+        )
+
+        return {
+            "total_scripts": total_scripts,
+            "total_usage": total_usage,
+            "reused_scripts": reused_scripts,
+            "reuse_rate": (
+                (reused_scripts / total_scripts * 100) if total_scripts > 0 else 0
+            ),
+            "average_usage": (total_usage / total_scripts) if total_scripts > 0 else 0,
+        }
+
     def send_telegram_message(
         self, message: str, chat_id: Optional[str] = None
     ) -> bool:
@@ -89,10 +308,10 @@ Generated at: """
 
     def generate_code_from_request(
         self, user_request: str, preferred_language: str = "auto"
-    ) -> Tuple[str, str, str]:
+    ) -> Tuple[str, str, str, bool]:
         """
         Generate intelligent code based on user request using AI.
-        Returns: (code, language, filename)
+        Returns: (code, language, filename, is_reused)
         """
         request_lower = user_request.lower()
 
@@ -227,7 +446,23 @@ Generated at: """
         else:
             language = preferred_language
 
-        # Generate code using AI or fallback to templates
+        # Check for existing script first
+        existing_script = self._find_existing_script(user_request, language)
+        if existing_script:
+            filename, original_request = existing_script
+            script_path = self.commands_dir / filename
+
+            # Read the existing code
+            with open(script_path, "r") as f:
+                code = f.read()
+
+            logger.info(
+                f"Reusing existing script: {filename} (originally for: '{original_request}')"
+            )
+            self._update_script_usage(filename)
+            return code, language, filename, True
+
+        # Generate new code using AI if no existing script found
         if self.ai_enabled:
             code = self._generate_ai_code(user_request, language)
         else:
@@ -249,7 +484,10 @@ Generated at: """
         else:
             filename = f"{description}_{timestamp}.py"
 
-        return code, language, filename
+        # Register the new script
+        self._register_script(user_request, language, filename)
+
+        return code, language, filename, False
 
     def _generate_ai_code(self, user_request: str, language: str) -> str:
         """Generate code using OpenAI API with template reference"""
@@ -499,7 +737,7 @@ Generate only the Bash script code, no explanations or markdown formatting."""
             logger.info(f"Creating dynamic tool for request: {user_request}")
 
             # Generate code
-            code, language, filename = self.generate_code_from_request(
+            code, language, filename, is_reused = self.generate_code_from_request(
                 user_request, preferred_language
             )
 
@@ -517,17 +755,23 @@ Generate only the Bash script code, no explanations or markdown formatting."""
                 "code": code,
                 "stdout": stdout,
                 "stderr": stderr,
+                "is_reused": is_reused,
                 "timestamp": datetime.now().isoformat(),
             }
 
             # Format message for Telegram
             if send_to_telegram:
                 if success:
-                    message = f"✅ **Dynamic Tool Executed Successfully**\n\n"
+                    if is_reused:
+                        message = f"♻️ **Dynamic Tool Reused Successfully**\n\n"
+                    else:
+                        message = f"✅ **Dynamic Tool Executed Successfully**\n\n"
                     message += f"**Request:** {user_request}\n"
                     message += f"**Language:** {language}\n"
-                    message += f"**File:** `dynamic_commands/{filename}`\n\n"
-                    message += f"**Output:**\n```\n{stdout[:1500]}{'...' if len(stdout) > 1500 else ''}\n```"
+                    message += f"**File:** `dynamic_commands/{filename}`\n"
+                    if is_reused:
+                        message += f"**Status:** Reused existing script\n"
+                    message += f"\n**Output:**\n```\n{stdout[:1500]}{'...' if len(stdout) > 1500 else ''}\n```"
 
                     if stderr and stderr.strip():
                         message += f"\n\n**Warnings:**\n```\n{stderr[:500]}\n```"

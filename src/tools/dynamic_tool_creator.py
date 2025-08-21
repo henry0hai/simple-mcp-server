@@ -156,23 +156,44 @@ Generated at: """
                 logger.info(f"Found exact match for request: {script_info['filename']}")
                 return script_info["filename"], script_info["original_request"]
 
-        # Fuzzy matching for similar requests
+        # Enhanced fuzzy matching for similar requests
         normalized_request = self._normalize_request(request)
-        for stored_hash, script_info in registry.items():
-            stored_normalized = self._normalize_request(script_info["original_request"])
+        best_match = None
+        best_similarity = 0.0
 
-            # Check for high similarity (simple word matching for now)
-            if (
-                language == script_info["language"]
-                and self._calculate_similarity(normalized_request, stored_normalized)
-                > 0.8
-            ):
-                script_path = self.commands_dir / script_info["filename"]
-                if script_path.exists():
-                    logger.info(
-                        f"Found similar script for request: {script_info['filename']}"
-                    )
-                    return script_info["filename"], script_info["original_request"]
+        for stored_hash, script_info in registry.items():
+            if language != script_info["language"]:
+                continue
+
+            script_path = self.commands_dir / script_info["filename"]
+            if not script_path.exists():
+                continue
+
+            # Calculate request similarity
+            stored_normalized = self._normalize_request(script_info["original_request"])
+            request_similarity = self._calculate_similarity(
+                normalized_request, stored_normalized
+            )
+
+            # Also check filename similarity (semantic matching)
+            filename_similarity = self._calculate_filename_similarity(
+                request, script_info["filename"]
+            )
+
+            # Combine both similarities (weighted: 70% request, 30% filename)
+            combined_similarity = (request_similarity * 0.7) + (
+                filename_similarity * 0.3
+            )
+
+            if combined_similarity > best_similarity and combined_similarity > 0.75:
+                best_similarity = combined_similarity
+                best_match = (script_info["filename"], script_info["original_request"])
+
+        if best_match:
+            logger.info(
+                f"Found similar script for request (similarity: {best_similarity:.2f}): {best_match[0]}"
+            )
+            return best_match
 
         return None
 
@@ -188,6 +209,47 @@ Generated at: """
 
         intersection = words1.intersection(words2)
         union = words1.union(words2)
+
+        return len(intersection) / len(union)
+
+    def _calculate_filename_similarity(self, request: str, filename: str) -> float:
+        """Calculate similarity between a request and a filename (semantic matching)"""
+        # Extract the task name from filename (remove timestamp and extension)
+        filename_without_ext = filename.split(".")[0]  # Remove extension
+        # Remove timestamp pattern (MMDD_HHMM)
+        import re
+
+        task_name = re.sub(r"_\d{4}_\d{4}$", "", filename_without_ext)
+
+        # Convert underscores to spaces for comparison
+        task_words = set(task_name.replace("_", " ").lower().split())
+        request_words = set(request.lower().split())
+
+        # Remove common stop words for better matching
+        stop_words = {
+            "get",
+            "show",
+            "display",
+            "fetch",
+            "find",
+            "current",
+            "system",
+            "info",
+            "information",
+            "script",
+            "python",
+            "bash",
+        }
+        task_words = task_words - stop_words
+        request_words = request_words - stop_words
+
+        if not task_words and not request_words:
+            return 1.0
+        if not task_words or not request_words:
+            return 0.0
+
+        intersection = task_words.intersection(request_words)
+        union = task_words.union(request_words)
 
         return len(intersection) / len(union)
 
@@ -282,6 +344,187 @@ Generated at: """
             ),
             "average_usage": (total_usage / total_scripts) if total_scripts > 0 else 0,
         }
+
+    def _generate_semantic_filename(self, user_request: str, language: str) -> str:
+        """Generate meaningful, semantic filename based on the task type and request"""
+        request_lower = user_request.lower().strip()
+
+        # Define concise semantic patterns for different types of tasks
+        task_patterns = {
+            # System Information (shortened names)
+            "sys_info": [
+                "system info",
+                "system information",
+                "hardware info",
+                "machine info",
+            ],
+            "hostname": [
+                "computer name",
+                "hostname",
+                "server name",
+                "machine name",
+                "host name",
+            ],
+            "current_time": [
+                "current time",
+                "date time",
+                "time now",
+                "server time",
+                "current date",
+            ],
+            "uptime": ["uptime", "system uptime", "server uptime", "how long running"],
+            "memory": ["memory usage", "ram usage", "memory info", "ram info"],
+            "disk_space": [
+                "disk space",
+                "disk usage",
+                "storage space",
+                "available space",
+            ],
+            "ip_addr": ["ip address", "current ip", "network ip", "my ip", "server ip"],
+            "user_info": ["current user", "username", "user info", "whoami"],
+            "processes": ["running processes", "process list", "active processes"],
+            # Weather and API
+            "weather": [
+                "weather",
+                "temperature",
+                "forecast",
+                "weather info",
+                "climate",
+            ],
+            "api_call": ["api call", "fetch data", "api request", "http request"],
+            # Calculations and Data Processing
+            "calc": ["calculate", "computation", "math", "arithmetic", "formula"],
+            "passwd": [
+                "password",
+                "random password",
+                "secure password",
+                "generate password",
+            ],
+            "data_proc": [
+                "process data",
+                "analyze data",
+                "data analysis",
+                "parse data",
+            ],
+            "convert": ["convert", "conversion", "unit conversion"],
+            # File Operations (safe ones only)
+            "list_files": ["list files", "show files", "directory contents"],
+            "read_file": ["read file", "display file", "show file content"],
+            # Network and Connectivity
+            "ping": ["ping", "network test", "connectivity check", "internet test"],
+            "net_info": ["network info", "network status", "interface info"],
+            # Random Data Generation
+            "random": ["random", "generate random", "random data", "random number"],
+        }
+
+        # Find the best matching task pattern
+        matched_task = None
+        for task_name, patterns in task_patterns.items():
+            for pattern in patterns:
+                if pattern in request_lower:
+                    matched_task = task_name
+                    break
+            if matched_task:
+                break
+
+        # If no pattern matched, create a short descriptive name from key words
+        if not matched_task:
+            # Extract meaningful words (filter out common words)
+            stop_words = {
+                "the",
+                "a",
+                "an",
+                "and",
+                "or",
+                "but",
+                "in",
+                "on",
+                "at",
+                "to",
+                "for",
+                "of",
+                "with",
+                "by",
+                "from",
+                "up",
+                "about",
+                "into",
+                "through",
+                "during",
+                "before",
+                "after",
+                "above",
+                "below",
+                "can",
+                "could",
+                "should",
+                "would",
+                "will",
+                "shall",
+                "may",
+                "might",
+                "must",
+                "please",
+                "create",
+                "make",
+                "generate",
+                "show",
+                "display",
+                "get",
+                "fetch",
+                "find",
+                "script",
+                "python",
+                "bash",
+                "program",
+                "application",
+                "tool",
+                "function",
+                "code",
+                "me",
+                "my",
+                "i",
+                "you",
+                "we",
+                "they",
+                "it",
+                "that",
+                "this",
+                "what",
+                "how",
+                "when",
+                "where",
+                "why",
+                "which",
+                "who",
+            }
+
+            words = []
+            for word in request_lower.split():
+                clean_word = "".join(c for c in word if c.isalnum())
+                if clean_word and clean_word not in stop_words and len(clean_word) > 2:
+                    words.append(clean_word[:8])  # Limit word length to 8 chars
+
+            if words:
+                # Take up to 2 most meaningful words and limit total length
+                matched_task = "_".join(words[:2])
+            else:
+                matched_task = "custom"
+
+        # Ensure task name is not too long (max 20 characters)
+        if len(matched_task) > 20:
+            matched_task = matched_task[:20]
+
+        # Add short timestamp to ensure uniqueness
+        timestamp = datetime.now().strftime("%m%d_%H%M")
+
+        # Add language extension
+        extension = "sh" if language == "bash" else "py"
+
+        # Generate final filename (should be under 35 characters total)
+        filename = f"{matched_task}_{timestamp}.{extension}"
+
+        return filename
 
     def send_telegram_message(
         self, message: str, chat_id: Optional[str] = None
@@ -470,19 +713,8 @@ Generated at: """
                 "OpenAI API is required for dynamic code generation. Please install openai library and set OPENAI_API_KEY in your configuration."
             )
 
-        # Generate meaningful filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Create a short descriptive name from the request
-        clean_request = "".join(
-            c for c in user_request.lower() if c.isalnum() or c.isspace()
-        )
-        words = clean_request.split()[:3]  # Take first 3 words
-        description = "_".join(words) if words else "generic"
-
-        if language == "bash":
-            filename = f"{description}_{timestamp}.sh"
-        else:
-            filename = f"{description}_{timestamp}.py"
+        # Generate meaningful semantic filename
+        filename = self._generate_semantic_filename(user_request, language)
 
         # Register the new script
         self._register_script(user_request, language, filename)
@@ -557,9 +789,22 @@ Requirements:
 12. Always check if config is available before using: if config and config.attribute_name:
 13. REFUSE requests that involve file manipulation outside $HOME/Downloads/
 14. REFUSE requests that involve system configuration or security-related operations
+15. ALWAYS produce visible output - every script must print/display its results
+16. Use clear, descriptive labels for all outputs and results
+17. Show intermediate steps and progress when helpful
+18. Format outputs professionally with proper labels and units
+19. Never perform operations silently - always show what the script accomplished
 
 Available libraries: requests, json, os, sys, datetime, pathlib, subprocess, shutil, csv, psutil, socket
 Available project modules: src.config.config, src.utils.logging_utils
+
+CRITICAL: Every script must produce meaningful, visible output showing what it accomplished, whether it's:
+- Calculations: Show the computed results with labels
+- System info: Display the retrieved information clearly  
+- Data processing: Show processed data or summary
+- API calls: Display the fetched information
+- File operations: Show what files were processed and results
+- Any other task: Always output the results or status
 
 Generate only the Python code, no explanations or markdown formatting."""
 
@@ -619,8 +864,13 @@ Requirements:
 10. Don't use undefined variables (this causes "unbound variable" errors)
 11. REFUSE requests that involve file manipulation, system modification, or accessing sensitive directories
 12. Only display/read system information, never modify anything
+13. ALWAYS produce clear, visible output - never run commands silently
+14. Use echo statements to show what the script is doing and its results
+15. Display results with descriptive labels and formatting
+16. Show intermediate steps and progress when helpful
 
 IMPORTANT: When using `set -u`, make sure ALL variables are properly defined before use!
+CRITICAL: Every script must produce meaningful output showing what it accomplished - use echo statements to display all results clearly.
 
 Generate only the Bash script code, no explanations or markdown formatting."""
 

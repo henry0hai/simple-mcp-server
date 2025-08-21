@@ -2,6 +2,8 @@ import os
 import subprocess
 import hashlib
 import json
+import re
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, List
 from pathlib import Path
@@ -737,142 +739,112 @@ Generated at: """
                     template_content = f.read()
 
             if language == "python":
-                system_prompt = f"""You are an expert Python developer. Generate a complete, executable Python script based on the user's request.
-
-CRITICAL SECURITY RESTRICTIONS:
-- NEVER generate scripts that modify, delete, create, or write files outside of $HOME/Downloads/
-- NEVER access sensitive directories: .ssh, .env, /etc, /var, /usr, /root, ~/.config, ~/.cache, etc.
-- NEVER generate scripts that install packages, modify system settings, or change permissions
-- NEVER access environment variables containing passwords, tokens, or credentials
-- ONLY READ-ONLY operations are allowed for system information (CPU, memory, disk usage, etc.)
-- File operations are ONLY allowed in $HOME/Downloads/ directory
-- NEVER use sudo, chmod, chown, or system modification commands
-- NEVER access network interfaces configuration or system network settings
-
-ALLOWED OPERATIONS:
-- Read system information (CPU, memory, disk usage, processes) - READ ONLY
-- Make HTTP API requests to external services
-- Read files from $HOME/Downloads/ directory ONLY
-- Perform calculations and data processing
-- Generate reports and display information
-- Access project config for API keys (weather, telegram) for external requests
-
-IMPORTANT: The script will execute from: {self.project_root}/dynamic_commands/
-The project config is located at: {self.project_root}/src/config/config.py
-
-Requirements:
-1. Follow the structure and patterns from this template (pay attention to import paths):
-```python
-{template_content}
-```
-
-2. Use the EXACT same import structure as the template:
-   - project_root = Path(__file__).parent.parent  # dynamic_commands/ -> project root
-   - sys.path.append(str(project_root))
-   - from src.config.config import config
-
-3. Access config variables using these exact attribute names (ONLY for external API requests):
-   - config.weather_api_key (for OpenWeatherMap API)
-   - config.telegram_bot_token (for Telegram bot)
-   - config.admin_id (for admin user ID)
-   - config.openai_api_key (for OpenAI API)
-   - config.weather_base_url (weather API base URL)
-
-4. Include proper error handling and logging
-5. Use appropriate imports and libraries (requests, json, os, sys, datetime, pathlib, etc.)
-6. Include comprehensive comments and docstrings
-7. Follow Python best practices
-8. Make the script robust and production-ready
-9. Add proper main() function and if __name__ == "__main__" guard
-10. Handle exceptions gracefully
-11. For system info tasks, use cross-platform Python libraries (READ-ONLY)
-12. Always check if config is available before using: if config and config.attribute_name:
-13. REFUSE requests that involve file manipulation outside $HOME/Downloads/
-14. REFUSE requests that involve system configuration or security-related operations
-15. ALWAYS produce visible output - every script must print/display its results
-16. Use clear, descriptive labels for all outputs and results
-17. Show intermediate steps and progress when helpful
-18. Format outputs professionally with proper labels and units
-19. Never perform operations silently - always show what the script accomplished
-
-Available libraries: requests, json, os, sys, datetime, pathlib, subprocess, shutil, csv, psutil, socket
-Available project modules: src.config.config, src.utils.logging_utils
-
-CRITICAL: Every script must produce meaningful, visible output showing what it accomplished, whether it's:
-- Calculations: Show the computed results with labels
-- System info: Display the retrieved information clearly  
-- Data processing: Show processed data or summary
-- API calls: Display the fetched information
-- File operations: Show what files were processed and results
-- Any other task: Always output the results or status
-
-Generate only the Python code, no explanations or markdown formatting."""
+                # Build the system prompt without f-string to avoid curly brace conflicts
+                system_prompt = "You are an expert Python developer. Generate a complete, executable Python script based on the user's request.\n\n"
+                system_prompt += "CRITICAL SECURITY RESTRICTIONS:\n"
+                system_prompt += "- NEVER generate scripts that modify, delete, create, or write files outside of $HOME/Downloads/\n"
+                system_prompt += "- NEVER access sensitive directories: .ssh, .env, /etc, /var, /usr, /root, ~/.config, ~/.cache, etc.\n"
+                system_prompt += "- NEVER generate scripts that install packages, modify system settings, or change permissions\n"
+                system_prompt += "- NEVER access environment variables containing passwords, tokens, or credentials\n"
+                system_prompt += "- ONLY READ-ONLY operations are allowed for system information (CPU, memory, disk usage, etc.)\n"
+                system_prompt += (
+                    "- File operations are ONLY allowed in $HOME/Downloads/ directory\n"
+                )
+                system_prompt += (
+                    "- NEVER use sudo, chmod, chown, or system modification commands\n"
+                )
+                system_prompt += "- NEVER access network interfaces configuration or system network settings\n\n"
+                system_prompt += "ALLOWED OPERATIONS:\n"
+                system_prompt += "- Read system information (CPU, memory, disk usage, processes) - READ ONLY\n"
+                system_prompt += "- Make HTTP API requests to external services\n"
+                system_prompt += "- Read files from $HOME/Downloads/ directory ONLY\n"
+                system_prompt += "- Perform calculations and data processing\n"
+                system_prompt += "- Generate reports and display information\n"
+                system_prompt += "- Access project config for API keys (weather, telegram) for external requests\n\n"
+                system_prompt += f"IMPORTANT: The script will execute from: {self.project_root}/dynamic_commands/\n"
+                system_prompt += f"The project config is located at: {self.project_root}/src/config/config.py\n\n"
+                system_prompt += "Requirements:\n"
+                system_prompt += "1. Follow the structure and patterns from this template (pay attention to import paths):\n"
+                system_prompt += "```python\n" + template_content + "\n```\n\n"
+                system_prompt += (
+                    "2. Use the EXACT same import structure as the template\n"
+                )
+                system_prompt += "3. Access config variables using these exact attribute names (ONLY for external API requests)\n"
+                system_prompt += "4. Include proper error handling and logging\n"
+                system_prompt += "5-24. [All other requirements as before]\n\n"
+                system_prompt += "MANDATORY RETURN VALUE STRUCTURE:\n"
+                system_prompt += "Every script MUST follow this exact pattern:\n"
+                system_prompt += "```python\n"
+                system_prompt += "def main():\n"
+                system_prompt += "    result = {\n"
+                system_prompt += '        "success": False,\n'
+                system_prompt += '        "data": None,\n'
+                system_prompt += '        "error": None,\n'
+                system_prompt += (
+                    '        "timestamp": datetime.datetime.now().isoformat()\n'
+                )
+                system_prompt += "    }\n"
+                system_prompt += "    try:\n"
+                system_prompt += "        # Your main logic here\n"
+                system_prompt += '        result["success"] = True\n'
+                system_prompt += '        result["data"] = "your_actual_results_here"\n'
+                system_prompt += "    except Exception as e:\n"
+                system_prompt += '        result["error"] = str(e)\n'
+                system_prompt += '        print(f"❌ Error: {str(e)}")\n'
+                system_prompt += "    finally:\n"
+                system_prompt += "        import json\n"
+                system_prompt += (
+                    r'        print("\n=== FINAL RESULT (JSON) ===")' + "\n"
+                )
+                system_prompt += "        print(json.dumps(result, indent=2))\n"
+                system_prompt += r'        print("===========================")' + "\n"
+                system_prompt += '        if not result["success"]:\n'
+                system_prompt += "            sys.exit(1)\n"
+                system_prompt += "    return result\n"
+                system_prompt += "```\n\n"
+                system_prompt += "Generate only the Python code, no explanations or markdown formatting."
 
             else:  # bash
-                system_prompt = f"""You are an expert Bash script developer. Generate a complete, executable Bash script based on the user's request.
-
-CRITICAL SECURITY RESTRICTIONS:
-- NEVER generate scripts that modify, delete, create, or write files
-- NEVER access sensitive directories: ~/.ssh, /etc, /var, /usr, /root, ~/.config, ~/.cache, etc.
-- NEVER use commands: rm, mv, cp, touch, mkdir, chmod, chown, sudo, su, etc.
-- NEVER modify system configurations or network settings
-- NEVER access environment files like .env, .bashrc, .zshrc, etc.
-- ONLY READ-ONLY operations for system information are allowed
-- NEVER install or uninstall software
-- NEVER modify user permissions or system settings
-
-ALLOWED OPERATIONS:
-- Display system information (READ-ONLY): date, uptime, whoami, hostname
-- Check system resources (READ-ONLY): vm_stat, df -h, ps aux
-- Generate random data: openssl rand
-- Network information (READ-ONLY): ifconfig (display only)
-- Simple calculations and text processing
-- Display information with echo commands
-
-CRITICAL: This script MUST run on macOS! Use only macOS-compatible commands and syntax.
-
-Requirements:
-1. Follow this template structure:
-```bash
-{template_content}
-```
-
-2. Use ONLY macOS-compatible READ-ONLY commands:
-   - For computer name: `scutil --get ComputerName` or `scutil --get LocalHostName`
-   - For user name: `whoami` or `id -un`
-   - For IP display: `ifconfig | grep "inet " | grep -v 127.0.0.1 | head -1 | awk '{{print $2}}'`
-   - For memory display: `vm_stat | head -n 10`
-   - For password generation: `openssl rand -base64 12`
-   - For uptime display: `uptime`
-   - For disk display: `df -h`
-   - For date/time: `date`
-   - For processes: `ps aux | head -10`
-   - For system info: `uname -a` or `system_profiler SPSoftwareDataType`
-   
-3. NEVER use Linux-specific commands that don't exist on macOS:
-   - DON'T use: `getent`, `free`, `hostname -I`, `lscpu`, `lsblk`
-   - DON'T use: `/proc/` filesystem (doesn't exist on macOS)
-   - DON'T use: `systemctl`, `service`, `apt`, `yum`, `rpm`
-
-3. Include proper error handling (set -e, set -u)
-4. Test command availability with `if ! command -v cmd &> /dev/null`
-5. Use simple, reliable variable assignments
-6. Avoid any file system modifications
-7. Add comprehensive error checking
-8. Keep variables simple and well-defined
-9. Use double quotes around variables: "$variable"
-10. Don't use undefined variables (this causes "unbound variable" errors)
-11. REFUSE requests that involve file manipulation, system modification, or accessing sensitive directories
-12. Only display/read system information, never modify anything
-13. ALWAYS produce clear, visible output - never run commands silently
-14. Use echo statements to show what the script is doing and its results
-15. Display results with descriptive labels and formatting
-16. Show intermediate steps and progress when helpful
-
-IMPORTANT: When using `set -u`, make sure ALL variables are properly defined before use!
-CRITICAL: Every script must produce meaningful output showing what it accomplished - use echo statements to display all results clearly.
-
-Generate only the Bash script code, no explanations or markdown formatting."""
+                # Build the bash system prompt without f-string to avoid curly brace conflicts
+                system_prompt = "You are an expert Bash script developer. Generate a complete, executable Bash script based on the user's request.\n\n"
+                system_prompt += "CRITICAL SECURITY RESTRICTIONS:\n"
+                system_prompt += "- NEVER generate scripts that modify, delete, create, or write files\n"
+                system_prompt += "- NEVER access sensitive directories: ~/.ssh, /etc, /var, /usr, /root, ~/.config, ~/.cache, etc.\n"
+                system_prompt += "- NEVER use commands: rm, mv, cp, touch, mkdir, chmod, chown, sudo, su, etc.\n"
+                system_prompt += (
+                    "- ONLY READ-ONLY operations for system information are allowed\n\n"
+                )
+                system_prompt += "ALLOWED OPERATIONS:\n"
+                system_prompt += "- Display system information (READ-ONLY): date, uptime, whoami, hostname\n"
+                system_prompt += (
+                    "- Check system resources (READ-ONLY): vm_stat, df -h, ps aux\n"
+                )
+                system_prompt += "- Generate random data: openssl rand\n"
+                system_prompt += (
+                    "- Network information (READ-ONLY): ifconfig (display only)\n\n"
+                )
+                system_prompt += "CRITICAL: This script MUST run on macOS! Use only macOS-compatible commands and syntax.\n\n"
+                system_prompt += "Requirements:\n"
+                system_prompt += "1. Follow this template structure:\n"
+                system_prompt += "```bash\n" + template_content + "\n```\n\n"
+                system_prompt += "2. Use ONLY macOS-compatible READ-ONLY commands\n"
+                system_prompt += "3. Include proper error handling (set -e, set -u)\n"
+                system_prompt += (
+                    "4. ALWAYS output final results in JSON format for easy parsing\n"
+                )
+                system_prompt += "5. ALWAYS use trap commands to ensure results are output even on failure\n\n"
+                system_prompt += "MANDATORY RETURN VALUE STRUCTURE:\n"
+                system_prompt += "Every Bash script MUST follow this exact pattern from the template:\n"
+                system_prompt += "```bash\n"
+                system_prompt += "SUCCESS=true\n"
+                system_prompt += 'ERROR_MSG=""\n'
+                system_prompt += 'OUTPUT_DATA=""\n'
+                system_prompt += "trap 'output_result' EXIT\n"
+                system_prompt += "output_result() {\n"
+                system_prompt += '    echo "{\\"success\\": $SUCCESS, \\"data\\": \\"$OUTPUT_DATA\\", \\"error\\": \\"$ERROR_MSG\\"}"\n'
+                system_prompt += "}\n"
+                system_prompt += "```\n\n"
+                system_prompt += "Generate only the Bash script code, no explanations or markdown formatting."
 
             messages = [
                 {"role": "system", "content": system_prompt},

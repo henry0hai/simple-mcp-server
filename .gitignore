@@ -60,3 +60,6 @@ qdrant_storage/
 mcp_stack.sh
 .mcp_stack
 .mcp_stack/*
+
+# Dynamic Commands
+dynamic_commands/

@@ -22,6 +22,9 @@ from src.tools.budget_management_tool import (
     predict_category_tool,
 )
 
+# Import the dynamic tool creator
+from src.tools.dynamic_tool_creator import create_dynamic_tool
+
 from src.utils.logging_utils import get_logger
 
 logger = get_logger(__name__)
@@ -108,6 +111,38 @@ def get_available_categories() -> dict:
 def predict_category(description: str) -> dict:
     """Predict the most appropriate category for an expense description without adding it."""
     return predict_category_tool(description)
+
+
+@mcp.tool()
+def generic_tool_creation(
+    user_request: str,
+    preferred_language: str = "auto",
+    send_to_telegram: bool = True,
+    chat_id: str = None,
+) -> dict:
+    """
+    Dynamically create and execute bash or Python scripts based on user requests.
+
+    This tool can generate scripts for common system tasks like:
+    - Getting server IP address
+    - Checking disk usage
+    - Memory usage analysis
+    - Process listing
+    - Date/time information
+    - And more based on natural language requests
+
+    Args:
+        user_request: Natural language description of what you want the script to do
+        preferred_language: "auto" (default), "bash", or "python"
+        send_to_telegram: Whether to send results to Telegram bot (default: True)
+        chat_id: Telegram chat ID to send to (uses admin ID if not provided)
+
+    Returns:
+        Dictionary with execution results, generated code, and output
+    """
+    return create_dynamic_tool(
+        user_request, preferred_language, send_to_telegram, chat_id
+    )
 
 
 @mcp.resource("resource://config")

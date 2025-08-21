@@ -16,6 +16,7 @@ WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 WEATHER_BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
 CITIES = os.getenv("CITIES", "").split(",")
 HF_API_KEY = os.getenv("HF_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GRAPHQL_SERVER_URL = os.getenv(
     "GRAPHQL_SERVER_URL", "http://192.168.1.199:3000/graphql"
 )
@@ -59,6 +60,7 @@ class BotConfig:
         self.weather_base_url = WEATHER_BASE_URL
         self.cities = CITIES
         self.hf_key_api = HF_API_KEY
+        self.openai_api_key = OPENAI_API_KEY
         self.debug_time_loop = DEBUG_TIME_LOOP
         self.scheduled_weather_loop = SCHEDULED_WEATHER_LOOP
         self.graphql_server_url = GRAPHQL_SERVER_URL

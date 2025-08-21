@@ -355,6 +355,8 @@ Requirements:
 ```
 
 2. Use ONLY macOS-compatible READ-ONLY commands:
+   - For computer name: `scutil --get ComputerName` or `scutil --get LocalHostName`
+   - For user name: `whoami` or `id -un`
    - For IP display: `ifconfig | grep "inet " | grep -v 127.0.0.1 | head -1 | awk '{{print $2}}'`
    - For memory display: `vm_stat | head -n 10`
    - For password generation: `openssl rand -base64 12`
@@ -362,6 +364,12 @@ Requirements:
    - For disk display: `df -h`
    - For date/time: `date`
    - For processes: `ps aux | head -10`
+   - For system info: `uname -a` or `system_profiler SPSoftwareDataType`
+   
+3. NEVER use Linux-specific commands that don't exist on macOS:
+   - DON'T use: `getent`, `free`, `hostname -I`, `lscpu`, `lsblk`
+   - DON'T use: `/proc/` filesystem (doesn't exist on macOS)
+   - DON'T use: `systemctl`, `service`, `apt`, `yum`, `rpm`
 
 3. Include proper error handling (set -e, set -u)
 4. Test command availability with `if ! command -v cmd &> /dev/null`
@@ -416,7 +424,7 @@ Generate only the Bash script code, no explanations or markdown formatting."""
                 f"Failed to generate code using AI: {str(e)}. Please check your OpenAI API key and try again."
             )
 
-    def execute_script(
+    async def execute_script(
         self, code: str, language: str, filename: str, timeout: int = 30
     ) -> Tuple[bool, str, str]:
         """
@@ -444,28 +452,40 @@ Generate only the Bash script code, no explanations or markdown formatting."""
                 else:
                     cmd = ["/usr/bin/env", "python3", str(script_path)]
 
-            # Execute with timeout from the project root directory
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
+            # Execute with timeout from the project root directory using async subprocess
+            import asyncio
+
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 cwd=str(self.project_root),  # Run from project root for proper imports
             )
 
+            try:
+                stdout_data, stderr_data = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
+                stdout = stdout_data.decode("utf-8") if stdout_data else ""
+                stderr = stderr_data.decode("utf-8") if stderr_data else ""
+                returncode = process.returncode
+
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                logger.warning(f"Script execution timed out: {filename}")
+                return False, "", f"Script execution timed out after {timeout} seconds"
+
             # Don't clean up - keep the script for future reference
-            logger.info(f"Script executed with return code: {result.returncode}")
+            logger.info(f"Script executed with return code: {returncode}")
 
-            return result.returncode == 0, result.stdout, result.stderr
+            return returncode == 0, stdout, stderr
 
-        except subprocess.TimeoutExpired:
-            logger.warning(f"Script execution timed out: {filename}")
-            return False, "", f"Script execution timed out after {timeout} seconds"
         except Exception as e:
             logger.error(f"Execution error for {filename}: {str(e)}")
             return False, "", f"Execution error: {str(e)}"
 
-    def create_and_execute_tool(
+    async def create_and_execute_tool(
         self,
         user_request: str,
         preferred_language: str = "auto",
@@ -483,8 +503,10 @@ Generate only the Bash script code, no explanations or markdown formatting."""
                 user_request, preferred_language
             )
 
-            # Execute the script
-            success, stdout, stderr = self.execute_script(code, language, filename)
+            # Execute the script (now async)
+            success, stdout, stderr = await self.execute_script(
+                code, language, filename
+            )
 
             # Prepare response
             response = {
@@ -553,7 +575,7 @@ Generate only the Bash script code, no explanations or markdown formatting."""
 dynamic_tool_creator = DynamicToolCreator()
 
 
-def create_dynamic_tool(
+async def create_dynamic_tool(
     user_request: str,
     preferred_language: str = "auto",
     send_to_telegram: bool = True,
@@ -571,6 +593,6 @@ def create_dynamic_tool(
     Returns:
         Dictionary with execution results
     """
-    return dynamic_tool_creator.create_and_execute_tool(
+    return await dynamic_tool_creator.create_and_execute_tool(
         user_request, preferred_language, send_to_telegram, chat_id
     )

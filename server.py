@@ -114,12 +114,12 @@ def predict_category(description: str) -> dict:
 
 
 @mcp.tool()
-def generic_tool_creation(
+async def generic_tool_creation(
     user_request: str,
     preferred_language: str = "auto",
     send_to_telegram: bool = True,
     chat_id: str = None,
-) -> dict:
+) -> str:
     """
     Dynamically create and execute bash or Python scripts based on user requests.
 
@@ -138,11 +138,53 @@ def generic_tool_creation(
         chat_id: Telegram chat ID to send to (uses admin ID if not provided)
 
     Returns:
-        Dictionary with execution results, generated code, and output
+        Formatted string with execution results and output
     """
-    return create_dynamic_tool(
+    result = await create_dynamic_tool(
         user_request, preferred_language, send_to_telegram, chat_id
     )
+
+    # Format the response for better MCP client display
+    if result["success"]:
+        # Extract the key information from stdout for AI processing
+        output = result["stdout"].strip()
+
+        # Create a clean, AI-friendly response
+        response = f"Script executed successfully. "
+        response += f"Generated {result['language']} script: {result['filename']}. "
+        response += f"Result: {output}"
+
+        # Add any warnings if present
+        if result["stderr"] and result["stderr"].strip():
+            # Filter out logging messages from stderr for cleaner output
+            stderr_lines = result["stderr"].strip().split("\n")
+            non_log_errors = [
+                line
+                for line in stderr_lines
+                if not any(
+                    log_indicator in line.lower()
+                    for log_indicator in [
+                        "info",
+                        "warning",
+                        "debug",
+                        "logging initialized",
+                    ]
+                )
+            ]
+            if non_log_errors:
+                response += f" Warning: {' '.join(non_log_errors)}"
+
+        return response
+    else:
+        error_msg = f"Script execution failed. "
+        if "error" in result:
+            error_msg += f"Error: {result['error']} "
+        if result.get("stderr") and result["stderr"].strip():
+            error_msg += f"Details: {result['stderr'].strip()} "
+        if result.get("stdout") and result["stdout"].strip():
+            error_msg += f"Partial output: {result['stdout'].strip()}"
+
+        return error_msg
 
 
 @mcp.resource("resource://config")

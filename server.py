@@ -27,6 +27,8 @@ from src.tools.dynamic_tool_creator import create_dynamic_tool
 
 from src.utils.logging_utils import get_logger
 
+from src.config.config import config
+
 logger = get_logger(__name__)
 
 
@@ -118,7 +120,7 @@ async def generic_tool_creation(
     user_request: str,
     preferred_language: str = "auto",
     send_to_telegram: bool = True,
-    chat_id: str = None,
+    chat_id: str = config.admin_id,
 ) -> str:
     """
     Dynamically create and execute bash or Python scripts based on user requests.

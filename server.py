@@ -207,4 +207,14 @@ def personalized_greeting(name: str) -> str:
 
 if __name__ == "__main__":
     # Start an HTTP server on port port
-    mcp.run(transport="http", host="127.0.0.1", port=port)
+    try:
+        mcp.run(transport="http", host="127.0.0.1", port=port)
+    except (KeyboardInterrupt, SystemExit):
+        print("\nServer stopped by user (Ctrl+C)")
+    except Exception as e:
+        import asyncio
+
+        if isinstance(e, asyncio.CancelledError):
+            print("\nServer shutdown: CancelledError (asyncio task cancelled)")
+        else:
+            raise

@@ -123,11 +123,11 @@ class BudgetManagementClient:
         variables = {"input": {"source": source, "amount": str(amount)}}
         return self._execute_query(mutation, variables)
 
-    def get_transactions(self) -> Dict[str, Any]:
+    def get_transactions(self, month: str) -> Dict[str, Any]:
         """Get all transactions"""
         query = """
-            query GetTransactions {
-                transactions {
+            query GetTransactions($month: String!) {
+                transactions(month: $month) {
                     id
                     description
                     amount
@@ -136,13 +136,14 @@ class BudgetManagementClient:
                 }
             }
         """
-        return self._execute_query(query)
+        variables = {"month": month} 
+        return self._execute_query(query, variables)
 
-    def get_incomes(self) -> Dict[str, Any]:
+    def get_incomes(self, month: str) -> Dict[str, Any]:
         """Get all income entries"""
         query = """
-            query GetIncomes {
-                incomes {
+            query GetIncomes($month: String!) {
+                incomes(month: $month) {
                     id
                     source
                     amount
@@ -150,13 +151,14 @@ class BudgetManagementClient:
                 }
             }
         """
-        return self._execute_query(query)
+        variables = {"month": month}
+        return self._execute_query(query, variables)
 
-    def get_savings(self) -> Dict[str, Any]:
+    def get_savings(self, month: str) -> Dict[str, Any]:
         """Get all savings entries"""
         query = """
-            query GetSavings {
-                savings {
+            query GetSavings($month: String!) {
+                savings(month: $month) {
                     id
                     name
                     amount
@@ -164,7 +166,8 @@ class BudgetManagementClient:
                 }
             }
         """
-        return self._execute_query(query)
+        variables = {"month": month}
+        return self._execute_query(query, variables)
 
     def get_monthly_remain(self, month: str) -> Dict[str, Any]:
         """Get monthly financial summary"""
@@ -244,16 +247,16 @@ def get_budget_summary_tool(month: Optional[str] = None) -> Dict[str, Any]:
     try:
         summary = {}
 
-        # Get all financial data
-        summary["transactions"] = budget_client.get_transactions()
-        summary["incomes"] = budget_client.get_incomes()
-        summary["savings"] = budget_client.get_savings()
-
         # If no month specified, use current month
         if not month:
             current_info = get_current_month_year()
             month = current_info['month_year_string']
             logger.info(f"No month specified, using current month: {month} ({current_info['display_format']})")
+
+        # Get all financial data
+        summary["transactions"] = budget_client.get_transactions(month)
+        summary["incomes"] = budget_client.get_incomes(month)
+        summary["savings"] = budget_client.get_savings(month)
 
         # Get monthly summary
         summary["monthly_summary"] = budget_client.get_monthly_remain(month)

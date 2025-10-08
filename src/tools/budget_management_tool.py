@@ -20,10 +20,10 @@ def get_current_month_year():
     """Helper function to get current month-year in different formats"""
     current_date = datetime.now()
     return {
-        'month_year_string': current_date.strftime("%Y-%m"),  # For GraphQL queries
-        'month_int': current_date.month,  # For CSV exports
-        'year_int': current_date.year,    # For CSV exports
-        'display_format': current_date.strftime("%B %Y")  # For logging/display
+        "month_year_string": current_date.strftime("%Y-%m"),  # For GraphQL queries
+        "month_int": current_date.month,  # For CSV exports
+        "year_int": current_date.year,  # For CSV exports
+        "display_format": current_date.strftime("%B %Y"),  # For logging/display
     }
 
 
@@ -85,7 +85,7 @@ class BudgetManagementClient:
             raise Exception(f"Request failed: {e}")
 
     def add_expense(
-        self, description: str, amount: float, category: str
+        self, description: str, amount: float, category: str, created_at: str = ""
     ) -> Dict[str, Any]:
         """Add a new expense transaction"""
         mutation = """
@@ -99,16 +99,26 @@ class BudgetManagementClient:
                 }
             }
         """
-        variables = {
-            "input": {
-                "description": description,
-                "amount": str(amount),
-                "category": category,
-            }
+        # Build input object - only include created_at if it's not empty
+        input_data = {
+            "description": description,
+            "amount": str(amount),
+            "category": category,
         }
+
+        # Only add created_at if it's provided and not empty
+        if created_at and created_at.strip():
+            input_data["createdAt"] = created_at
+        else:
+            # Use current datetime in ISO format if not provided
+            input_data["createdAt"] = datetime.now().isoformat()
+
+        variables = {"input": input_data}
         return self._execute_query(mutation, variables)
 
-    def add_income(self, source: str, amount: float) -> Dict[str, Any]:
+    def add_income(
+        self, source: str, amount: float, received_at: str = ""
+    ) -> Dict[str, Any]:
         """Add a new income entry"""
         mutation = """
             mutation AddIncome($input: IncomeInput!) {
@@ -120,7 +130,17 @@ class BudgetManagementClient:
                 }
             }
         """
-        variables = {"input": {"source": source, "amount": str(amount)}}
+        # Build input object - only include received_at if it's not empty
+        input_data = {"source": source, "amount": str(amount)}
+
+        # Only add received_at if it's provided and not empty
+        if received_at and received_at.strip():
+            input_data["receivedAt"] = received_at
+        else:
+            # Use current datetime in ISO format if not provided
+            input_data["receivedAt"] = datetime.now().isoformat()
+
+        variables = {"input": input_data}
         return self._execute_query(mutation, variables)
 
     def get_transactions(self, month: str) -> Dict[str, Any]:
@@ -136,7 +156,7 @@ class BudgetManagementClient:
                 }
             }
         """
-        variables = {"month": month} 
+        variables = {"month": month}
         return self._execute_query(query, variables)
 
     def get_incomes(self, month: str) -> Dict[str, Any]:
@@ -211,7 +231,7 @@ budget_client = BudgetManagementClient()
 
 
 def add_expense_tool(
-    description: str, amount: float, category: str = None
+    description: str, amount: float, category: str = None, created_at: str = ""
 ) -> Dict[str, Any]:
     """Add a new expense transaction to the budget system. If category is not provided, it will be automatically detected."""
     try:
@@ -222,19 +242,23 @@ def add_expense_tool(
                 f"Auto-detected category '{category}' for expense: {description}"
             )
 
-        result = budget_client.add_expense(description, amount, category)
-        logger.info(f"Added expense: {description} - ${amount} ({category})")
+        result = budget_client.add_expense(description, amount, category, created_at)
+        logger.info(
+            f"Added expense: {description} - ${amount} ({category}) ({created_at})"
+        )
         return result
     except Exception as e:
         logger.error(f"Failed to add expense: {e}")
         return {"error": str(e)}
 
 
-def add_income_tool(source: str, amount: float) -> Dict[str, Any]:
+def add_income_tool(
+    source: str, amount: float, received_at: str = ""
+) -> Dict[str, Any]:
     """Add a new income entry to the budget system."""
     try:
-        result = budget_client.add_income(source, amount)
-        logger.info(f"Added income: {source} - ${amount}")
+        result = budget_client.add_income(source, amount, received_at)
+        logger.info(f"Added income: {source} - ${amount} ({received_at})")
         return result
     except Exception as e:
         logger.error(f"Failed to add income: {e}")
@@ -250,8 +274,10 @@ def get_budget_summary_tool(month: Optional[str] = None) -> Dict[str, Any]:
         # If no month specified, use current month
         if not month:
             current_info = get_current_month_year()
-            month = current_info['month_year_string']
-            logger.info(f"No month specified, using current month: {month} ({current_info['display_format']})")
+            month = current_info["month_year_string"]
+            logger.info(
+                f"No month specified, using current month: {month} ({current_info['display_format']})"
+            )
 
         # Get all financial data
         summary["transactions"] = budget_client.get_transactions(month)
@@ -278,9 +304,11 @@ def get_expense_report_tool(
         # If no specific parameters and not requesting all data, default to current month/year
         if not all_data and month is None and year is None:
             current_info = get_current_month_year()
-            month = current_info['month_int']
-            year = current_info['year_int']
-            logger.info(f"No date specified, using current month/year: {month}/{year} ({current_info['display_format']})")
+            month = current_info["month_int"]
+            year = current_info["year_int"]
+            logger.info(
+                f"No date specified, using current month/year: {month}/{year} ({current_info['display_format']})"
+            )
 
         csv_data = budget_client.export_unified_csv(month, year, all_data)
         logger.info(

@@ -78,15 +78,17 @@ def get_weather(city: str) -> str:
 
 
 @mcp.tool()
-def add_expense(description: str, amount: float, category: str = None) -> dict:
+def add_expense(
+    description: str, amount: float, category: str = None, created_at: str = ""
+) -> dict:
     """Add a new expense transaction to the budget system. Category will be auto-detected if not provided."""
-    return add_expense_tool(description, amount, category)
+    return add_expense_tool(description, amount, category, created_at)
 
 
 @mcp.tool()
-def add_income(source: str, amount: float) -> dict:
+def add_income(source: str, amount: float, received_at: str = "") -> dict:
     """Add a new income entry to the budget system."""
-    return add_income_tool(source, amount)
+    return add_income_tool(source, amount, received_at)
 
 
 @mcp.tool()
